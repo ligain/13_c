@@ -7,12 +7,26 @@
 
 #define MAGIC  0xFFFFFFFF
 #define DEVICE_APPS_TYPE 1
+#define MAX_APPS_IDS 20
 
 typedef struct pbheader_s {
     uint32_t magic;
     uint16_t type;
     uint16_t length;
 } pbheader_t;
+
+struct appdevice_s {
+    struct device {
+        uint8_t *type;
+        uint8_t *id;
+    } Device;
+    double lat;
+    double lon;
+    uint8_t apps_n; // number of items in apps[]
+    uint8_t apps[MAX_APPS_IDS];
+};
+
+typedef struct appdevice_s appdevice_t;
 
 #define PBHEADER_INIT {MAGIC, 0, 0}
 
@@ -56,17 +70,160 @@ void example() {
     free(buf);
 }
 
+int convert_dict_to_struct(PyObject *item, appdevice_t *result){
+    PyObject *item_device = NULL;
+    PyObject *item_device_type = NULL;
+    PyObject *item_device_id = NULL;
+    PyObject *item_lat = NULL;
+    PyObject *item_lon = NULL;
+    PyObject *item_app = NULL;
+    PyObject *item_app_id = NULL;
+
+    if ((item_device = PyDict_GetItemString(item, "device")) != NULL) {
+
+        if (!PyDict_CheckExact(item_device)) {
+            printf("device is not a dict");
+            return 1;
+        }
+
+        if ((item_device_type = PyDict_GetItemString(item_device, "type")) != NULL) {
+
+            if (PyString_CheckExact(item_device_type)) {
+                result->Device.type = (uint8_t *) PyString_AsString(PyObject_Str(item_device_type));
+            } else {
+                printf("device type is not a string");
+                Py_DECREF(item_device_type);
+                Py_DECREF(item_device);
+                return 1;
+            }
+        }
+
+        if ((item_device_id = PyDict_GetItemString(item_device, "id")) != NULL) {
+
+            if (PyString_CheckExact(item_device_id)) {
+                result->Device.id = (uint8_t *) PyString_AsString(PyObject_Str(item_device_id));
+            } else {
+                printf("item_device_id is not a string");
+                Py_DECREF(item_device_id);
+                Py_DECREF(item_device);
+                return 1;
+            }
+        }
+
+    } else {
+        printf("Invalid Structure\n");
+        Py_DECREF(item_device_id);
+        Py_DECREF(item_device_type);
+        Py_DECREF(item_device);
+        return 1;
+    }
+
+    if ((item_lat = PyDict_GetItemString(item, "lat")) != NULL) {
+
+        if (PyObject_TypeCheck(item_lat, &PyFloat_Type) || PyObject_TypeCheck(item_lat, &PyInt_Type))
+            result->lat = PyFloat_AsDouble(item_lat);
+
+        Py_DECREF(item_lat);
+    } else
+        result->lat = 0;
+
+    if ((item_lon = PyDict_GetItemString(item, "lon")) != NULL) {
+
+        if (PyObject_TypeCheck(item_lon, &PyFloat_Type) || PyObject_TypeCheck(item_lon, &PyInt_Type))
+            result->lon = PyFloat_AsDouble(item_lon);
+
+        Py_DECREF(item_lon);
+    } else
+        result->lon = 0;
+
+    if ((item_app = PyDict_GetItemString(item, "apps")) != NULL) {
+        if (PyObject_TypeCheck(item_app, &PyList_Type)) {
+            int apps_number = (uint8_t) PyList_Size(item_app);
+            for (int i = 0; i < apps_number; i++) {
+                item_app_id = PyList_GetItem(item_app, i);
+                if (!PyObject_TypeCheck(item_app_id, &PyInt_Type)) {
+                    apps_number = 0;
+                    Py_DECREF(item_app_id);
+                    break;
+                }
+                result->apps[i] = (uint8_t) PyInt_AsSsize_t(item_app_id);
+                Py_DECREF(item_app_id);
+            }
+            result->apps_n = apps_number;
+
+        } else {
+            printf("app is not a list\n");
+            result->apps_n = 0;
+        }
+
+        Py_DECREF(item_app);
+    } else {
+        printf("there is no such item in dist as app\n");
+        result->apps_n = 0;
+    }
+
+    Py_DECREF(item_device_id);
+    Py_DECREF(item_device_type);
+    Py_DECREF(item_device);
+    return 0;
+}
+
+int encode_protobuf_msg(appdevice_t *parsed_dict, void *msg){
+    return 0;
+}
+
 // Read iterator of Python dicts
 // Pack them to DeviceApps protobuf and write to file with appropriate header
 // Return number of written bytes as Python integer
 static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
     const char* path;
-    PyObject* o;
+    PyObject* o = NULL;
+    PyObject *iterable = NULL;
+    PyObject *item = NULL;
+    int return_code;
+    appdevice_t *parsed_dict = malloc(sizeof(appdevice_t));
+//    char *dev_type;
+//    DeviceApps msg = DEVICE_APPS__INIT;
+//    DeviceApps__Device device = DEVICE_APPS__DEVICE__INIT;
+//    void *buf;
+//    uint16_t len;
+
 
     if (!PyArg_ParseTuple(args, "Os", &o, &path))
         return NULL;
 
-    printf("Write to: %s\n", path);
+    printf("\nWrite to: %s\n", path);
+
+    if ((iterable = PyObject_GetIter(o)) == NULL)
+        return NULL;
+
+    while ((item = PyIter_Next(iterable)) != NULL) {
+
+        if (!PyDict_CheckExact(item))
+            continue;
+
+        printf("Start parsing dict: %s\n", PyString_AsString(PyObject_Str(item)));
+
+        return_code = convert_dict_to_struct(item, parsed_dict);
+        printf("return_code: %d\n", return_code);
+        printf("parsed dict type: %s\n", parsed_dict->Device.type);
+        printf("parsed dict id: %s\n", parsed_dict->Device.id);
+        printf("parsed dict lat: %f\n", parsed_dict->lat);
+        printf("parsed dict lon: %f\n", parsed_dict->lon);
+        printf("parsed dict app_n: %d\n", parsed_dict->apps_n);
+        printf("parsed dict app[0]: %d\n", parsed_dict->apps[0]);
+        printf("parsed dict app[1]: %d\n", parsed_dict->apps[1]);
+        printf("parsed dict app[2]: %d\n", parsed_dict->apps[2]);
+        printf("parsed dict app[3]: %d\n", parsed_dict->apps[3]);
+
+
+        Py_DECREF(item);
+        item = NULL;
+    }
+    free(parsed_dict);
+    parsed_dict = NULL;
+
+    Py_DECREF(iterable);
     Py_RETURN_NONE;
 }
 
