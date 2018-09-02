@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <zlib.h>
 #include "deviceapps.pb-c.h"
 
 #define MAGIC  0xFFFFFFFF
@@ -227,11 +228,15 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
     appdevice_t *parsed_dict = malloc(sizeof(appdevice_t));
     void *proto_msg = NULL;
     unsigned protobuf_msg_len = 0;
+    pbheader_t *msg_header = malloc(sizeof(pbheader_t));
+    gzFile output_file = NULL;
+    long unsigned total_written = 0;
 
     if (!PyArg_ParseTuple(args, "Os", &o, &path))
         return NULL;
 
     printf("\nWrite to: %s\n", path);
+    output_file = gzopen(path, "wb");
 
     if ((iterable = PyObject_GetIter(o)) == NULL)
         return NULL;
@@ -259,20 +264,41 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
             continue;
         }
         protobuf_msg_len = encode_protobuf_msg(parsed_dict, &proto_msg);
-        printf("################# protobuf_msg_len: %d\n", protobuf_msg_len);
-        printf("proto_msg: %p\n", proto_msg);
-        fwrite(proto_msg, protobuf_msg_len, 1, stdout);
-        printf("\n");
+
+        msg_header->length = protobuf_msg_len;
+        msg_header->magic = MAGIC;
+        msg_header->type = DEVICE_APPS_TYPE;
+
+//        printf("header struct magic: %x\n", msg_header->magic);
+//        printf("header struct app type: %d\n", msg_header->type);
+//        printf("header struct length: %d\n", msg_header->length);
+
+        // write protobuf to file
+        if (output_file != NULL) {
+            total_written += gzwrite(output_file, msg_header, sizeof(pbheader_t));
+            printf("header total_written: %lu\n", total_written);
+            total_written += gzwrite(output_file, proto_msg, protobuf_msg_len);
+            printf("data total_written: %lu\n", total_written);
+        } else {
+            printf("output file is corrupted");
+        }
 
         Py_DECREF(item);
         item = NULL;
+
         free(proto_msg);
         proto_msg = NULL;
     }
     free(parsed_dict);
     parsed_dict = NULL;
 
+    free(msg_header);
+    msg_header = NULL;
+
     Py_DECREF(iterable);
+    gzclose(output_file);
+
+    printf("total: %lu\n", total_written);
     Py_RETURN_NONE;
 }
 
