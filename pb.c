@@ -17,8 +17,8 @@ typedef struct pbheader_s {
 
 struct appdevice_s {
     struct device {
-        uint8_t *type;
-        uint8_t *id;
+        char *type;
+        char *id;
     } Device;
     double lat;
     double lon;
@@ -89,7 +89,7 @@ int convert_dict_to_struct(PyObject *item, appdevice_t *result){
         if ((item_device_type = PyDict_GetItemString(item_device, "type")) != NULL) {
 
             if (PyString_CheckExact(item_device_type)) {
-                result->Device.type = (uint8_t *) PyString_AsString(PyObject_Str(item_device_type));
+                result->Device.type = PyString_AsString(PyObject_Str(item_device_type));
             } else {
                 printf("device type is not a string");
                 Py_DECREF(item_device_type);
@@ -101,7 +101,7 @@ int convert_dict_to_struct(PyObject *item, appdevice_t *result){
         if ((item_device_id = PyDict_GetItemString(item_device, "id")) != NULL) {
 
             if (PyString_CheckExact(item_device_id)) {
-                result->Device.id = (uint8_t *) PyString_AsString(PyObject_Str(item_device_id));
+                result->Device.id = PyString_AsString(PyObject_Str(item_device_id));
             } else {
                 printf("item_device_id is not a string");
                 Py_DECREF(item_device_id);
@@ -168,8 +168,51 @@ int convert_dict_to_struct(PyObject *item, appdevice_t *result){
     return 0;
 }
 
-int encode_protobuf_msg(appdevice_t *parsed_dict, void *msg){
-    return 0;
+int encode_protobuf_msg(appdevice_t *parsed_dict, void **proto_msg){
+    DeviceApps msg = DEVICE_APPS__INIT;
+    DeviceApps__Device device = DEVICE_APPS__DEVICE__INIT;
+    unsigned protobuf_msg_len = 0;
+
+    device.has_id = 1;
+    device.id.data = (uint8_t *) parsed_dict->Device.id;
+    device.id.len = strlen(parsed_dict->Device.id);
+
+    device.has_type = 1;
+    device.type.data = (uint8_t *) parsed_dict->Device.type;
+    device.type.len = strlen(parsed_dict->Device.type);
+    msg.device = &device;
+
+    if (parsed_dict->lat != 0) {
+        msg.has_lat = 1;
+        msg.lat = parsed_dict->lat;
+    } else {
+        msg.has_lat = 0;
+    }
+
+    if (parsed_dict->lon != 0) {
+        msg.has_lon = 1;
+        msg.lon = parsed_dict->lon;
+    } else {
+        msg.has_lon = 0;
+    }
+
+    if (parsed_dict->apps_n) {
+        msg.n_apps = parsed_dict->apps_n;
+        msg.apps = malloc(sizeof(uint32_t) * msg.n_apps);
+        for (int i = 0; i < parsed_dict->apps_n; i++) {
+            msg.apps[i] = parsed_dict->apps[i];
+        }
+    } else {
+        msg.n_apps = 0;
+        msg.apps = malloc(0);
+    }
+
+    protobuf_msg_len = device_apps__get_packed_size(&msg);
+    *proto_msg = malloc(protobuf_msg_len);
+    device_apps__pack(&msg, *proto_msg);
+
+    free(msg.apps);
+    return protobuf_msg_len;
 }
 
 // Read iterator of Python dicts
@@ -180,14 +223,10 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
     PyObject* o = NULL;
     PyObject *iterable = NULL;
     PyObject *item = NULL;
-    int return_code;
+    int return_code = 0;
     appdevice_t *parsed_dict = malloc(sizeof(appdevice_t));
-//    char *dev_type;
-//    DeviceApps msg = DEVICE_APPS__INIT;
-//    DeviceApps__Device device = DEVICE_APPS__DEVICE__INIT;
-//    void *buf;
-//    uint16_t len;
-
+    void *proto_msg = NULL;
+    unsigned protobuf_msg_len = 0;
 
     if (!PyArg_ParseTuple(args, "Os", &o, &path))
         return NULL;
@@ -212,13 +251,23 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
         printf("parsed dict lon: %f\n", parsed_dict->lon);
         printf("parsed dict app_n: %d\n", parsed_dict->apps_n);
         printf("parsed dict app[0]: %d\n", parsed_dict->apps[0]);
-        printf("parsed dict app[1]: %d\n", parsed_dict->apps[1]);
-        printf("parsed dict app[2]: %d\n", parsed_dict->apps[2]);
-        printf("parsed dict app[3]: %d\n", parsed_dict->apps[3]);
 
+        if (return_code) {
+            printf("Error. Skip dict: %s \n", PyString_AsString(PyObject_Str(item)));
+            Py_DECREF(item);
+            item = NULL;
+            continue;
+        }
+        protobuf_msg_len = encode_protobuf_msg(parsed_dict, &proto_msg);
+        printf("################# protobuf_msg_len: %d\n", protobuf_msg_len);
+        printf("proto_msg: %p\n", proto_msg);
+        fwrite(proto_msg, protobuf_msg_len, 1, stdout);
+        printf("\n");
 
         Py_DECREF(item);
         item = NULL;
+        free(proto_msg);
+        proto_msg = NULL;
     }
     free(parsed_dict);
     parsed_dict = NULL;
