@@ -22,13 +22,20 @@ class TestPB(unittest.TestCase):
     # def tearDown(self):
     #     os.remove(TEST_FILE)
 
-    def test_write(self):
-        bytes_written = pb.deviceapps_xwrite_pb(self.deviceapps, TEST_FILE)
-        self.assertTrue(bytes_written > 0)
+    # def test_write(self):
+    #     bytes_written = pb.deviceapps_xwrite_pb(self.deviceapps, TEST_FILE)
+    #     self.assertTrue(bytes_written > 0)
         # check magic, type, etc.
 
-    @unittest.skip("Optional problem")
+    # @unittest.skip("Optional problem")
     def test_read(self):
-        pb.deviceapps_xwrite_pb(self.deviceapps, TEST_FILE)
-        for i, d in enumerate(pb.deviceapps_xread_pb(TEST_FILE)):
-            self.assertEqual(d, self.deviceapps[i])
+        # pb.deviceapps_xwrite_pb(self.deviceapps, TEST_FILE)
+        return_value = pb.deviceapps_xread_pb(TEST_FILE)
+        print("return_value: %s" % return_value)
+
+        # gen = iter(lambda : 'r', 'r')
+        # print(gen)
+        for i, d in enumerate(return_value):
+            print("i: {}, d: {}".format(i, d))
+        # for i, d in enumerate(return_value):
+        #     self.assertEqual(d, self.deviceapps[i])
