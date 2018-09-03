@@ -312,7 +312,7 @@ int convert_protobuf_to_dict(PyObject *dict, DeviceApps *msg_decoded){
     if (msg_decoded->has_lon)
         PyDict_SetItemString(dict, "lon", Py_BuildValue("d", msg_decoded->lon));
 
-    printf("dict: ");
+    printf("dict1: ");
     PyObject_Print(dict, stdout, 0);
     printf("\n");
     return 0;
@@ -371,6 +371,9 @@ static PyObject *py_deviceapps_xread_pb(PyObject *self, PyObject *args) {
             result_dict = PyDict_New();
 
             convert_protobuf_to_dict(result_dict, msg_decoded);
+            printf("######################dict2: ");
+            PyObject_Print(dict, stdout, 0);
+            printf("\n");
 
             device_apps__free_unpacked(msg_decoded, NULL);
             free(msg_buf);
