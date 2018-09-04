@@ -41,16 +41,21 @@ int convert_dict_to_struct(PyObject *item, appdevice_t *result){
     PyObject *item_app = NULL;
     PyObject *item_app_id = NULL;
 
+//    printf("start item pointer: %p\n", item);
+
     if ((item_device = PyDict_GetItemString(item, "device")) != NULL) {
 
         if (!PyDict_CheckExact(item_device)) {
             printf("device is not a dict\n");
+            Py_DECREF(item_device);
             return 1;
         }
 
         if ((item_device_type = PyDict_GetItemString(item_device, "type")) != NULL) {
+//            printf("before item_device_type pointer: %p\n", item_device_type);
 
             if (PyString_CheckExact(item_device_type)) {
+//                strcpy(result->Device.type, PyString_AsString(item_device_type));
                 result->Device.type = PyString_AsString(PyObject_Str(item_device_type));
             } else {
                 printf("device type is not a string\n");
@@ -58,11 +63,14 @@ int convert_dict_to_struct(PyObject *item, appdevice_t *result){
                 Py_DECREF(item_device);
                 return 1;
             }
+//            printf("after item_device_type pointer: %p\n", item_device_type);
+//            printf("result->Device.type: %s\n", result->Device.type);
         }
 
         if ((item_device_id = PyDict_GetItemString(item_device, "id")) != NULL) {
 
             if (PyString_CheckExact(item_device_id)) {
+//                strcpy(result->Device.id, PyString_AsString(item_device_id));
                 result->Device.id = PyString_AsString(PyObject_Str(item_device_id));
             } else {
                 printf("item_device id is not a string\n");
@@ -127,6 +135,7 @@ int convert_dict_to_struct(PyObject *item, appdevice_t *result){
     Py_DECREF(item_device_id);
     Py_DECREF(item_device_type);
     Py_DECREF(item_device);
+//    printf("end item pointer: %p\n", item);
     return 0;
 }
 
@@ -187,16 +196,18 @@ static PyObject *py_deviceapps_xwrite_pb(PyObject *self, PyObject *args) {
     PyObject *item = NULL;
     int return_code = 0;
     appdevice_t *parsed_dict = malloc(sizeof(appdevice_t));
+//    appdevice_t *parsed_dict;
     void *proto_msg = NULL;
     unsigned protobuf_msg_len = 0;
     pbheader_t *msg_header = malloc(sizeof(pbheader_t));
     gzFile output_file = NULL;
-    unsigned long total_written = 0;
+    unsigned total_written = 0;
 
     if (!PyArg_ParseTuple(args, "Os", &o, &path)){
         PyErr_SetString(PyExc_TypeError, "error parsing arguments\n");
         return NULL;
-    }
+    } else
+        Py_INCREF(o);
 
     printf("\nWrite to: %s\n", path);
     output_file = gzopen(path, "wb");
@@ -212,12 +223,20 @@ static PyObject *py_deviceapps_xwrite_pb(PyObject *self, PyObject *args) {
 
     while ((item = PyIter_Next(iterable)) != NULL) {
 
+//        printf("obj o: ");
+//        PyObject_Print(o, stdout, 0);
+//        printf("\n");
+
         if (!PyDict_CheckExact(item)) {
             printf("Item is not a dict. Skipping... \n");
             continue;
         }
 
-        printf("Start parsing dict: %s\n", PyString_AsString(PyObject_Str(item)));
+        printf("Start parsing dict: ");
+        PyObject_Print(item, stdout, 0);
+        printf("\n");
+
+//        appdevice_t *parsed_dict = (appdevice_t *) malloc(sizeof(appdevice_t));
         return_code = convert_dict_to_struct(item, parsed_dict);
 
         if (return_code) {
@@ -235,50 +254,38 @@ static PyObject *py_deviceapps_xwrite_pb(PyObject *self, PyObject *args) {
         total_written += gzwrite(output_file, msg_header, sizeof(pbheader_t));
         total_written += gzwrite(output_file, proto_msg, protobuf_msg_len);
 
+//        free(parsed_dict);
+//        parsed_dict = NULL;
+
         Py_DECREF(item);
         item = NULL;
 
         free(proto_msg);
         proto_msg = NULL;
     }
+
+
+    gzclose(output_file);
+
     free(parsed_dict);
-    parsed_dict = NULL;
+//    parsed_dict = NULL;
 
     free(msg_header);
     msg_header = NULL;
 
     Py_DECREF(iterable);
-    gzclose(output_file);
+    iterable = NULL;
 
-//    printf("Total bytes written: %li on file: %s\n", total_written, path);
-    return Py_BuildValue("k", total_written);
+    Py_DECREF(o);
+
+//    Py_RETURN_NONE;
+
+    return Py_BuildValue("I", total_written);
 }
 
 int convert_protobuf_to_dict(PyObject *dict, DeviceApps *msg_decoded){
     PyObject *device_dict = NULL;
     PyObject *apps_list = NULL;
-
-    printf("msg_decoded lat: %f\n", msg_decoded->lat);
-    printf("msg_decoded lon: %f\n", msg_decoded->lon);
-    printf("msg_decoded n_apps: %d\n", msg_decoded->n_apps);
-    printf("msg_decoded apps[0]: %d\n", msg_decoded->apps[0]);
-    printf("msg_decoded apps[1]: %d\n", msg_decoded->apps[1]);
-    printf("msg_decoded apps[2]: %d\n", msg_decoded->apps[2]);
-    printf("msg_decoded apps[3]: %d\n", msg_decoded->apps[3]);
-    printf("msg_decoded device has id: %d\n", msg_decoded->device->has_id);
-    printf("msg_decoded device id len: %li\n", msg_decoded->device->id.len);
-    printf("msg_decoded device id: ");
-    for (int i = 0; i < msg_decoded->device->id.len; i++) {
-        printf("%c", msg_decoded->device->id.data[i]);
-    }
-    printf("\n");
-    printf("msg_decoded device has type: %d\n", msg_decoded->device->has_type);
-    printf("msg_decoded device type len: %li\n", msg_decoded->device->type.len);
-    printf("msg_decoded device type: ");
-    for (int i = 0; i < msg_decoded->device->type.len; i++) {
-        printf("%c", msg_decoded->device->type.data[i]);
-    }
-    printf("\n");
 
     if (!msg_decoded->device->has_id) {
         printf("absent device id in protobuf message\n");
@@ -292,13 +299,7 @@ int convert_protobuf_to_dict(PyObject *dict, DeviceApps *msg_decoded){
     PyDict_SetItemString(device_dict, "id", Py_BuildValue("s#", msg_decoded->device->id.data, msg_decoded->device->id.len));
     PyDict_SetItemString(device_dict, "type", Py_BuildValue("s#", msg_decoded->device->type.data, msg_decoded->device->type.len));
 
-    printf("device_dict: ");
-    PyObject_Print(device_dict, stdout, 0);
-    printf("\n");
-
-    printf("before list\n");
     apps_list = PyList_New(0);
-    printf("after list\n");
     if (msg_decoded->n_apps) {
         for (int i = 0; i < msg_decoded->n_apps; i++) {
             PyList_Append(apps_list, Py_BuildValue("i", msg_decoded->apps[i]));
@@ -312,9 +313,6 @@ int convert_protobuf_to_dict(PyObject *dict, DeviceApps *msg_decoded){
     if (msg_decoded->has_lon)
         PyDict_SetItemString(dict, "lon", Py_BuildValue("d", msg_decoded->lon));
 
-    printf("dict1: ");
-    PyObject_Print(dict, stdout, 0);
-    printf("\n");
     return 0;
 }
 
@@ -323,7 +321,7 @@ int convert_protobuf_to_dict(PyObject *dict, DeviceApps *msg_decoded){
 static PyObject *py_deviceapps_xread_pb(PyObject *self, PyObject *args) {
     const char *path;
     gzFile output_file = NULL;
-    PyObject *output_list = PyList_New(0);
+    PyObject *output_list = NULL;
     int read_bytes = 0;
     int header_size = sizeof(pbheader_t);
     pbheader_t *header_buf = malloc(header_size);
@@ -343,51 +341,38 @@ static PyObject *py_deviceapps_xread_pb(PyObject *self, PyObject *args) {
         free(header_buf);
         return NULL;
     }
+    output_list = PyList_New(0);
     while (1) {
         if (gzeof (output_file)) {
             break;
         }
         // read header
-        printf("header_buf: %p\n", header_buf);
-        printf("header_size: %d\n", header_size);
         read_bytes = gzread(output_file, header_buf, header_size);
-        printf("read_bytes: %d\n", read_bytes);
         if (read_bytes > 0) {
-            printf("header_buf magic: %x\n", header_buf->magic);
-            printf("header_buf type: %d\n", header_buf->type);
-            printf("header_buf length: %d\n", header_buf->length);
-
             // read protobuf message from file
             msg_buf = (uint8_t *) malloc(header_buf->length);
             read_bytes = gzread(output_file, msg_buf, header_buf->length);
-            printf("msg read_bytes: %d\n", read_bytes);
-            printf("msg start--->");
-            for (int i = 0; i < read_bytes; i++) {
-                printf("%c", msg_buf[i]);
-            }
-            printf("<---end of msg\n");
-
             msg_decoded = device_apps__unpack(NULL, header_buf->length, msg_buf);
             result_dict = PyDict_New();
-
-            convert_protobuf_to_dict(result_dict, msg_decoded);
-            printf("######################dict2: ");
-            PyObject_Print(dict, stdout, 0);
-            printf("\n");
+//            printf("result_dict pointer: %p\n", result_dict);
+            int status = convert_protobuf_to_dict(result_dict, msg_decoded);
+//            printf("###result_dict pointer2: %p\n", result_dict);
+//            printf("###result_dict: ");
+//            PyObject_Print(result_dict, stdout, 0);
+//            printf("\n");
+            if (!status) {
+                PyList_Append(output_list, result_dict);
+            } else
+                printf("error on parsing protobuf message");
 
             device_apps__free_unpacked(msg_decoded, NULL);
             free(msg_buf);
-            break;
         } else
             break;
     }
 
-    PyList_Append(output_list, Py_BuildValue("i", 10));
-    PyList_Append(output_list, Py_BuildValue("i", 11));
-    PyList_Append(output_list, Py_BuildValue("i", 12));
-
-    gzclose(output_file);
     free(header_buf);
+    gzclose(output_file);
 
     return PySeqIter_New(output_list);
 }
