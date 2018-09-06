@@ -24,6 +24,7 @@ static int convert_dict_to_protobuf(PyObject *item, void **proto_msg){
     PyObject *item_lon = NULL;
     PyObject *item_apps = NULL;
     unsigned protobuf_msg_len = 0;
+    uint8_t apps_number = 0;
 
     if (!PyDict_CheckExact(item)) {
         printf("Item is not a dict.\n");
@@ -40,7 +41,7 @@ static int convert_dict_to_protobuf(PyObject *item, void **proto_msg){
 
     if ((item_device = PyDict_GetItemString(item, "device")) != NULL) {
         if (!PyDict_CheckExact(item_device)) {
-            printf("device is not a dict\n");
+            printf("key device is not a dict\n");
             return -1;
         }
 
@@ -108,28 +109,29 @@ static int convert_dict_to_protobuf(PyObject *item, void **proto_msg){
 
     if ((item_apps = PyDict_GetItemString(item, "apps")) != NULL) {
         if (PyList_Check(item_apps)) {
-            int apps_number = PyList_Size(item_apps);
-            if (apps_number > 0) {
+            if ((apps_number = PyList_Size(item_apps)) > 0) {
                 msg.n_apps = apps_number;
                 msg.apps = malloc(sizeof(uint32_t) * msg.n_apps);
                 for (int i = 0; i < apps_number; i++) {
                     item_app_id = PyList_GetItem(item_apps, i);
-                    if (!PyObject_TypeCheck(item_app_id, &PyInt_Type)) {
-                        apps_number = 0;
-                        break;
+                    if (PyInt_Check(item_app_id)) {
+                        msg.apps[i] = (uint8_t) PyInt_AsSsize_t(item_app_id);
+                    } else {
+                        free(msg.apps);
+                        PyErr_SetString(PyExc_ValueError, "one of apps values is not an integer\n");
+                        return NULL;
                     }
-                    msg.apps[i] = (uint8_t) PyInt_AsSsize_t(item_app_id);
                 }
             } else
                 msg.n_apps = 0;
 
         } else {
-            printf("apps is not a list\n");
-            msg.n_apps = 0;
+            PyErr_SetString(PyExc_ValueError, "apps is not a list\n");
+            return NULL;
         }
     } else {
-        printf("apps key is absent in item\n");
-        msg.n_apps = 0;
+        PyErr_SetString(PyExc_ValueError, "apps key is absent in item\n");
+        return NULL;
     }
 
     protobuf_msg_len = device_apps__get_packed_size(&msg);
@@ -154,7 +156,8 @@ static PyObject *py_deviceapps_xwrite_pb(PyObject *self, PyObject *args) {
     pbheader_t *msg_header = malloc(sizeof(pbheader_t));
     gzFile output_file = NULL;
     unsigned long total_written = 0;
-    unsigned protobuf_msg_len = 0;
+    unsigned long bytes_written = 0;
+    int protobuf_msg_len = 0;
 
     if (!PyArg_ParseTuple(args, "Os", &o, &path)){
         PyErr_SetString(PyExc_TypeError, "error parsing arguments\n");
@@ -176,13 +179,40 @@ static PyObject *py_deviceapps_xwrite_pb(PyObject *self, PyObject *args) {
     while ((item = PyIter_Next(iterable)) != NULL) {
 
         protobuf_msg_len = convert_dict_to_protobuf(item, &proto_msg);
+        if (protobuf_msg_len <= 0) {
+            printf("An error has occurred parsing an item: ");
+            PyObject_Print(item, stdout, 0);
+            printf(" Skipping...\n");
+            continue;
+        }
 
         msg_header->length = protobuf_msg_len;
         msg_header->magic = MAGIC;
         msg_header->type = DEVICE_APPS_TYPE;
 
-        total_written += gzwrite(output_file, msg_header, sizeof(pbheader_t));
-        total_written += gzwrite(output_file, proto_msg, protobuf_msg_len);
+        bytes_written = gzwrite(output_file, msg_header, sizeof(pbheader_t));
+        if (bytes_written > 0) {
+            total_written += bytes_written;
+        } else {
+            PyErr_Format(
+                    PyExc_ValueError,
+                    "Error on writting protobuf header on file: %s\n",
+                    path
+            );
+            return NULL;
+        }
+
+        bytes_written = gzwrite(output_file, proto_msg, protobuf_msg_len);
+        if (bytes_written > 0) {
+            total_written += bytes_written;
+        } else {
+            PyErr_Format(
+                    PyExc_ValueError,
+                    "Error on writting protobuf message on file: %s\n",
+                    path
+            );
+            return NULL;
+        }
 
         Py_DECREF(item);
 
@@ -271,8 +301,13 @@ static PyObject *py_deviceapps_xread_pb(PyObject *self, PyObject *args) {
             int status = convert_protobuf_to_dict(result_dict, msg_decoded);
             if (!status) {
                 PyList_Append(output_list, result_dict);
-            } else
-                printf("error on parsing protobuf message");
+            } else {
+                PyErr_SetString(
+                        PyExc_OSError,
+                        "Source file is corrupted. Error on parsing protobuf message."
+                        );
+                return NULL;
+            }
 
             device_apps__free_unpacked(msg_decoded, NULL);
             free(msg_buf);
