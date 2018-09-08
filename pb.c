@@ -15,16 +15,32 @@ typedef struct pbheader_s {
     uint16_t length;
 } pbheader_t;
 
+static void get_geo_cord(PyObject *dict, char *cord_name, DeviceApps *msg) {
+    PyObject *cord_item = NULL;
+    protobuf_c_boolean *cord_has_item = strcmp("lat", cord_name) ? &msg->has_lon : &msg->has_lat;
+    double *cord_value = strcmp("lat", cord_name) ? &msg->lon : &msg->lat;
+
+    if ((cord_item = PyDict_GetItemString(dict, cord_name)) != NULL) {
+        if (PyInt_Check(cord_item) || PyFloat_Check(cord_item)) {
+            *cord_has_item = 1;
+            *cord_value = PyFloat_AsDouble(cord_item);
+        } else {
+            printf("%s key is absent in item\n", cord_name);
+            *cord_has_item = 0;
+        }
+    } else {
+        *cord_has_item = 0;
+    }
+}
+
 static int convert_dict_to_protobuf(PyObject *item, void **proto_msg){
     PyObject *item_app_id = NULL;
     PyObject *item_device = NULL;
     PyObject *item_device_type = NULL;
     PyObject *item_device_id = NULL;
-    PyObject *item_lat = NULL;
-    PyObject *item_lon = NULL;
     PyObject *item_apps = NULL;
     unsigned protobuf_msg_len = 0;
-    uint8_t apps_number = 0;
+    size_t apps_number = 0;
 
     if (!PyDict_CheckExact(item)) {
         printf("Item is not a dict.\n");
@@ -82,30 +98,8 @@ static int convert_dict_to_protobuf(PyObject *item, void **proto_msg){
         return -1;
     }
 
-
-    if ((item_lat = PyDict_GetItemString(item, "lat")) != NULL) {
-        if (PyInt_Check(item_lat) || PyFloat_Check(item_lat)) {
-            msg.has_lat = 1;
-            msg.lat = PyFloat_AsDouble(item_lat);
-        } else {
-            printf("latitude key is absent in item\n");
-            msg.has_lat = 0;
-        }
-    } else {
-        msg.has_lat = 0;
-    }
-
-    if ((item_lon = PyDict_GetItemString(item, "lon")) != NULL) {
-        if (PyInt_Check(item_lon) || PyFloat_Check(item_lon)) {
-            msg.has_lon = 1;
-            msg.lon = PyFloat_AsDouble(item_lon);
-        } else {
-            printf("longitude key is absent in item\n");
-            msg.has_lon = 0;
-        }
-    } else {
-        msg.has_lon = 0;
-    }
+    get_geo_cord(item, "lat", &msg);
+    get_geo_cord(item, "lon", &msg);
 
     if ((item_apps = PyDict_GetItemString(item, "apps")) != NULL) {
         if (PyList_Check(item_apps)) {
@@ -115,7 +109,7 @@ static int convert_dict_to_protobuf(PyObject *item, void **proto_msg){
                 for (int i = 0; i < apps_number; i++) {
                     item_app_id = PyList_GetItem(item_apps, i);
                     if (PyInt_Check(item_app_id)) {
-                        msg.apps[i] = (uint8_t) PyInt_AsSsize_t(item_app_id);
+                        msg.apps[i] = (uint32_t) PyInt_AsSsize_t(item_app_id);
                     } else {
                         free(msg.apps);
                         PyErr_SetString(PyExc_ValueError, "one of apps values is not an integer\n");
@@ -288,7 +282,7 @@ static PyObject *py_deviceapps_xread_pb(PyObject *self, PyObject *args) {
         return NULL;
     }
     output_list = PyList_New(0);
-    while (gzeof(output_file)) {
+    while (1) {
         // read header
         read_bytes = gzread(output_file, header_buf, header_size);
         if (read_bytes > 0) {
