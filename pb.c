@@ -33,43 +33,43 @@ static void get_geo_cord(PyObject *dict, char *cord_name, DeviceApps *msg) {
     }
 }
 
-static int convert_dict_to_protobuf(PyObject *item, void **proto_msg){
-    PyObject *item_app_id = NULL;
-    PyObject *item_device = NULL;
-    PyObject *item_device_type = NULL;
-    PyObject *item_device_id = NULL;
-    PyObject *item_apps = NULL;
+static int convert_dict_to_protobuf(PyObject *dict, void **proto_msg){
+    PyObject *dict__app__id = NULL;
+    PyObject *dict__device = NULL;
+    PyObject *dict__device__type = NULL;
+    PyObject *dict__device__id = NULL;
+    PyObject *dict__apps = NULL;
     unsigned protobuf_msg_len = 0;
     size_t apps_number = 0;
 
-    if (!PyDict_CheckExact(item)) {
+    if (!PyDict_CheckExact(dict)) {
         printf("Item is not a dict.\n");
-        Py_DECREF(item);
+        Py_DECREF(dict);
         return -1;
     }
 
     printf("Start parsing dict: ");
-    PyObject_Print(item, stdout, 0);
+    PyObject_Print(dict, stdout, 0);
     printf("\n");
 
     DeviceApps msg = DEVICE_APPS__INIT;
     DeviceApps__Device device = DEVICE_APPS__DEVICE__INIT;
 
-    if ((item_device = PyDict_GetItemString(item, "device")) == NULL) {
+    if ((dict__device = PyDict_GetItemString(dict, "device")) == NULL) {
         printf("Invalid item structure\n");
         return -1;
     }
 
-    if (!PyDict_CheckExact(item_device)) {
+    if (!PyDict_CheckExact(dict__device)) {
         printf("key device is not a dict\n");
         return -1;
     }
 
-    if ((item_device_type = PyDict_GetItemString(item_device, "type")) != NULL) {
-        if (PyString_CheckExact(item_device_type)) {
+    if ((dict__device__type = PyDict_GetItemString(dict__device, "type")) != NULL) {
+        if (PyString_CheckExact(dict__device__type)) {
             device.has_type = 1;
-            device.type.data = (uint8_t *) PyString_AsString(item_device_type);
-            device.type.len = strlen(PyString_AsString(item_device_type));
+            device.type.data = (uint8_t *) PyString_AsString(dict__device__type);
+            device.type.len = strlen(PyString_AsString(dict__device__type));
         } else {
             printf("type key is not a string\n");
             device.has_type = 0;
@@ -80,11 +80,11 @@ static int convert_dict_to_protobuf(PyObject *item, void **proto_msg){
         device.has_type = 0;
     }
 
-    if ((item_device_id = PyDict_GetItemString(item_device, "id")) != NULL) {
-        if (PyString_CheckExact(item_device_id)) {
+    if ((dict__device__id = PyDict_GetItemString(dict__device, "id")) != NULL) {
+        if (PyString_CheckExact(dict__device__id)) {
             device.has_id = 1;
-            device.id.data = (uint8_t *) PyString_AsString(item_device_id);
-            device.id.len = strlen(PyString_AsString(item_device_id));
+            device.id.data = (uint8_t *) PyString_AsString(dict__device__id);
+            device.id.len = strlen(PyString_AsString(dict__device__id));
         } else {
             printf("type key is not a string\n");
             device.has_id = 0;
@@ -97,20 +97,20 @@ static int convert_dict_to_protobuf(PyObject *item, void **proto_msg){
 
     msg.device = &device;
 
-    get_geo_cord(item, "lat", &msg);
-    get_geo_cord(item, "lon", &msg);
+    get_geo_cord(dict, "lat", &msg);
+    get_geo_cord(dict, "lon", &msg);
 
-    if ((item_apps = PyDict_GetItemString(item, "apps")) == NULL) {
+    if ((dict__apps = PyDict_GetItemString(dict, "apps")) == NULL) {
         PyErr_SetString(PyExc_ValueError, "apps key is absent in item\n");
         return NULL;
     }
 
-    if (!PyList_Check(item_apps)) {
+    if (!PyList_Check(dict__apps)) {
         PyErr_SetString(PyExc_ValueError, "apps is not a list\n");
         return NULL;
     }
 
-    if ((apps_number = PyList_Size(item_apps)) > 0) {
+    if ((apps_number = PyList_Size(dict__apps)) > 0) {
         msg.n_apps = apps_number;
         msg.apps = malloc(sizeof(uint32_t) * msg.n_apps);
         if (!msg.apps) {
@@ -118,13 +118,13 @@ static int convert_dict_to_protobuf(PyObject *item, void **proto_msg){
             return NULL;
         }
         for (int i = 0; i < apps_number; i++) {
-            item_app_id = PyList_GetItem(item_apps, i);
-            if (!PyInt_Check(item_app_id)) {
+            dict__app__id = PyList_GetItem(dict__apps, i);
+            if (!PyInt_Check(dict__app__id)) {
                 free(msg.apps);
                 PyErr_SetString(PyExc_ValueError, "one of apps values is not an integer\n");
                 return NULL;
             }
-            msg.apps[i] = (uint32_t) PyInt_AsSsize_t(item_app_id);
+            msg.apps[i] = (uint32_t) PyInt_AsSsize_t(dict__app__id);
         }
     } else
         msg.n_apps = 0;
