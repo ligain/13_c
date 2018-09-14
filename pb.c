@@ -100,36 +100,34 @@ static int convert_dict_to_protobuf(PyObject *item, void **proto_msg){
     get_geo_cord(item, "lat", &msg);
     get_geo_cord(item, "lon", &msg);
 
-    if ((item_apps = PyDict_GetItemString(item, "apps")) != NULL) {
-        if (PyList_Check(item_apps)) {
-            if ((apps_number = PyList_Size(item_apps)) > 0) {
-                msg.n_apps = apps_number;
-                msg.apps = malloc(sizeof(uint32_t) * msg.n_apps);
-                if (!msg.apps) {
-                    PyErr_SetString(PyExc_MemoryError, "failed to allocate memory\n");
-                    return NULL;
-                }
-                for (int i = 0; i < apps_number; i++) {
-                    item_app_id = PyList_GetItem(item_apps, i);
-                    if (PyInt_Check(item_app_id)) {
-                        msg.apps[i] = (uint32_t) PyInt_AsSsize_t(item_app_id);
-                    } else {
-                        free(msg.apps);
-                        PyErr_SetString(PyExc_ValueError, "one of apps values is not an integer\n");
-                        return NULL;
-                    }
-                }
-            } else
-                msg.n_apps = 0;
-
-        } else {
-            PyErr_SetString(PyExc_ValueError, "apps is not a list\n");
-            return NULL;
-        }
-    } else {
+    if ((item_apps = PyDict_GetItemString(item, "apps")) == NULL) {
         PyErr_SetString(PyExc_ValueError, "apps key is absent in item\n");
         return NULL;
     }
+
+    if (!PyList_Check(item_apps)) {
+        PyErr_SetString(PyExc_ValueError, "apps is not a list\n");
+        return NULL;
+    }
+
+    if ((apps_number = PyList_Size(item_apps)) > 0) {
+        msg.n_apps = apps_number;
+        msg.apps = malloc(sizeof(uint32_t) * msg.n_apps);
+        if (!msg.apps) {
+            PyErr_SetString(PyExc_MemoryError, "failed to allocate memory\n");
+            return NULL;
+        }
+        for (int i = 0; i < apps_number; i++) {
+            item_app_id = PyList_GetItem(item_apps, i);
+            if (!PyInt_Check(item_app_id)) {
+                free(msg.apps);
+                PyErr_SetString(PyExc_ValueError, "one of apps values is not an integer\n");
+                return NULL;
+            }
+            msg.apps[i] = (uint32_t) PyInt_AsSsize_t(item_app_id);
+        }
+    } else
+        msg.n_apps = 0;
 
     protobuf_msg_len = device_apps__get_packed_size(&msg);
     *proto_msg = malloc(protobuf_msg_len);
@@ -197,9 +195,7 @@ static PyObject *py_deviceapps_xwrite_pb(PyObject *self, PyObject *args) {
         msg_header->type = DEVICE_APPS_TYPE;
 
         bytes_written = gzwrite(output_file, msg_header, sizeof(pbheader_t));
-        if (bytes_written > 0) {
-            total_written += bytes_written;
-        } else {
+        if (bytes_written < 0) {
             PyErr_Format(
                     PyExc_ValueError,
                     "Error on writting protobuf header on file: %s\n",
@@ -207,11 +203,10 @@ static PyObject *py_deviceapps_xwrite_pb(PyObject *self, PyObject *args) {
             );
             return NULL;
         }
+        total_written += bytes_written;
 
         bytes_written = gzwrite(output_file, proto_msg, protobuf_msg_len);
-        if (bytes_written > 0) {
-            total_written += bytes_written;
-        } else {
+        if (bytes_written < 0) {
             PyErr_Format(
                     PyExc_ValueError,
                     "Error on writting protobuf message on file: %s\n",
@@ -219,6 +214,7 @@ static PyObject *py_deviceapps_xwrite_pb(PyObject *self, PyObject *args) {
             );
             return NULL;
         }
+        total_written += bytes_written;
 
         Py_DECREF(item);
 
