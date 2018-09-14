@@ -55,48 +55,47 @@ static int convert_dict_to_protobuf(PyObject *item, void **proto_msg){
     DeviceApps msg = DEVICE_APPS__INIT;
     DeviceApps__Device device = DEVICE_APPS__DEVICE__INIT;
 
-    if ((item_device = PyDict_GetItemString(item, "device")) != NULL) {
-        if (!PyDict_CheckExact(item_device)) {
-            printf("key device is not a dict\n");
-            return -1;
-        }
-
-        if ((item_device_type = PyDict_GetItemString(item_device, "type")) != NULL) {
-            if (PyString_CheckExact(item_device_type)) {
-                device.has_type = 1;
-                device.type.data = (uint8_t *) PyString_AsString(item_device_type);
-                device.type.len = strlen(PyString_AsString(item_device_type));
-            } else {
-                printf("type key is not a string\n");
-                device.has_type = 0;
-            }
-
-        } else {
-            printf("type key is absent in the device dict\n");
-            device.has_type = 0;
-        }
-
-        if ((item_device_id = PyDict_GetItemString(item_device, "id")) != NULL) {
-            if (PyString_CheckExact(item_device_id)) {
-                device.has_id = 1;
-                device.id.data = (uint8_t *) PyString_AsString(item_device_id);
-                device.id.len = strlen(PyString_AsString(item_device_id));
-            } else {
-                printf("type key is not a string\n");
-                device.has_id = 0;
-            }
-
-        } else {
-            printf("id key is absent in the device dict\n");
-            device.has_id = 0;
-        }
-
-        msg.device = &device;
-
-    } else {
+    if ((item_device = PyDict_GetItemString(item, "device")) == NULL) {
         printf("Invalid item structure\n");
         return -1;
     }
+
+    if (!PyDict_CheckExact(item_device)) {
+        printf("key device is not a dict\n");
+        return -1;
+    }
+
+    if ((item_device_type = PyDict_GetItemString(item_device, "type")) != NULL) {
+        if (PyString_CheckExact(item_device_type)) {
+            device.has_type = 1;
+            device.type.data = (uint8_t *) PyString_AsString(item_device_type);
+            device.type.len = strlen(PyString_AsString(item_device_type));
+        } else {
+            printf("type key is not a string\n");
+            device.has_type = 0;
+        }
+
+    } else {
+        printf("type key is absent in the device dict\n");
+        device.has_type = 0;
+    }
+
+    if ((item_device_id = PyDict_GetItemString(item_device, "id")) != NULL) {
+        if (PyString_CheckExact(item_device_id)) {
+            device.has_id = 1;
+            device.id.data = (uint8_t *) PyString_AsString(item_device_id);
+            device.id.len = strlen(PyString_AsString(item_device_id));
+        } else {
+            printf("type key is not a string\n");
+            device.has_id = 0;
+        }
+
+    } else {
+        printf("id key is absent in the device dict\n");
+        device.has_id = 0;
+    }
+
+    msg.device = &device;
 
     get_geo_cord(item, "lat", &msg);
     get_geo_cord(item, "lon", &msg);
