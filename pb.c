@@ -106,6 +106,10 @@ static int convert_dict_to_protobuf(PyObject *item, void **proto_msg){
             if ((apps_number = PyList_Size(item_apps)) > 0) {
                 msg.n_apps = apps_number;
                 msg.apps = malloc(sizeof(uint32_t) * msg.n_apps);
+                if (!msg.apps) {
+                    PyErr_SetString(PyExc_MemoryError, "failed to allocate memory\n");
+                    return NULL;
+                }
                 for (int i = 0; i < apps_number; i++) {
                     item_app_id = PyList_GetItem(item_apps, i);
                     if (PyInt_Check(item_app_id)) {
@@ -130,6 +134,10 @@ static int convert_dict_to_protobuf(PyObject *item, void **proto_msg){
 
     protobuf_msg_len = device_apps__get_packed_size(&msg);
     *proto_msg = malloc(protobuf_msg_len);
+    if (! *proto_msg) {
+        PyErr_SetString(PyExc_MemoryError, "failed to allocate memory\n");
+        return NULL;
+    }
     device_apps__pack(&msg, *proto_msg);
 
     if (msg.apps > 0)
@@ -152,6 +160,11 @@ static PyObject *py_deviceapps_xwrite_pb(PyObject *self, PyObject *args) {
     unsigned long total_written = 0;
     unsigned long bytes_written = 0;
     int protobuf_msg_len = 0;
+
+    if (!msg_header) {
+        PyErr_SetString(PyExc_MemoryError, "failed to allocate memory\n");
+        return NULL;
+    }
 
     if (!PyArg_ParseTuple(args, "Os", &o, &path)){
         PyErr_SetString(PyExc_TypeError, "error parsing arguments\n");
@@ -269,6 +282,11 @@ static PyObject *py_deviceapps_xread_pb(PyObject *self, PyObject *args) {
     DeviceApps *msg_decoded = NULL;
     PyObject *result_dict = NULL;
 
+    if (!header_buf) {
+        PyErr_SetString(PyExc_MemoryError, "failed to allocate memory\n");
+        return NULL;
+    }
+
     if (!PyArg_ParseTuple(args, "s", &path)) {
         free(header_buf);
         return NULL;
@@ -288,6 +306,10 @@ static PyObject *py_deviceapps_xread_pb(PyObject *self, PyObject *args) {
         if (read_bytes > 0) {
             // read protobuf message from file
             msg_buf = (uint8_t *) malloc(header_buf->length);
+            if (!msg_buf) {
+                PyErr_SetString(PyExc_MemoryError, "failed to allocate memory\n");
+                return NULL;
+            }
             read_bytes = gzread(output_file, msg_buf, header_buf->length);
             msg_decoded = device_apps__unpack(NULL, header_buf->length, msg_buf);
 
